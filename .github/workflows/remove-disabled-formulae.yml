@@ -1,3 +1,9 @@
+env:
+  ESC_ACTION_OIDC_AUTH: true
+  ESC_ACTION_OIDC_ORGANIZATION: pulumi
+  ESC_ACTION_OIDC_REQUESTED_TOKEN_TYPE: urn:pulumi:token-type:access_token:organization
+  ESC_ACTION_ENVIRONMENT: imports/github-secrets
+  ESC_ACTION_EXPORT_ENVIRONMENT_VARIABLES: false
 name: Remove disabled formulae
 
 on:
@@ -14,6 +20,7 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   remove-disabled-formulae:
@@ -26,6 +33,9 @@ jobs:
     permissions:
       contents: write # for Homebrew/actions/git-try-push
     steps:
+      - name: Fetch secrets from ESC
+        id: esc-secrets
+        uses: pulumi/esc-action@v1
       - name: Set up Homebrew
         id: set-up-homebrew
         uses: Homebrew/actions/setup-homebrew@master
@@ -43,7 +53,7 @@ jobs:
       - name: Set up commit signing
         uses: Homebrew/actions/setup-commit-signing@master
         with:
-          signing_key: ${{ secrets.BREWTESTBOT_GPG_SIGNING_SUBKEY }}
+          signing_key: ${{ steps.esc-secrets.outputs.BREWTESTBOT_GPG_SIGNING_SUBKEY }}
 
       - name: Checkout removal branch
         run: git checkout -b "$REMOVAL_BRANCH" origin/master
@@ -53,7 +63,7 @@ jobs:
         id: remove_disabled
         uses: Homebrew/actions/remove-disabled-formulae@master
         env:
-          HOMEBREW_GPG_PASSPHRASE: ${{ secrets.BREWTESTBOT_GPG_SIGNING_SUBKEY_PASSPHRASE }}
+          HOMEBREW_GPG_PASSPHRASE: ${{ steps.esc-secrets.outputs.BREWTESTBOT_GPG_SIGNING_SUBKEY_PASSPHRASE }}
           HOMEBREW_EVAL_ALL: 1
 
       - name: Push commits
@@ -66,14 +76,14 @@ jobs:
         env:
           GIT_COMMITTER_NAME: ${{ steps.git-user-config.outputs.name }}
           GIT_COMMITTER_EMAIL: ${{ steps.git-user-config.outputs.email }}
-          HOMEBREW_GPG_PASSPHRASE: ${{ secrets.BREWTESTBOT_GPG_SIGNING_SUBKEY_PASSPHRASE }}
+          HOMEBREW_GPG_PASSPHRASE: ${{ steps.esc-secrets.outputs.BREWTESTBOT_GPG_SIGNING_SUBKEY_PASSPHRASE }}
 
       - name: Create pull request
         id: pr-create
         if: fromJson(steps.remove_disabled.outputs.formulae-removed)
         working-directory: ${{ steps.set-up-homebrew.outputs.repository-path }}
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_GITHUB_PUBLIC_REPO_TOKEN }}
+          GH_TOKEN: ${{ steps.esc-secrets.outputs.HOMEBREW_GITHUB_PUBLIC_REPO_TOKEN }}
           PR_BODY: >
             This pull request was created automatically by the
             [`remove-disabled-formulae`](https://github.com/Homebrew/homebrew-core/blob/HEAD/.github/workflows/remove-disabled-formulae.yml)

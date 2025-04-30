@@ -1,7 +1,7 @@
 name: Recreate Linux self-hosted runners
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: null
   schedule:
     # Once each 24 hours, at 1 during the night
     - cron: "0 1 * * *"
@@ -17,11 +17,17 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 env:
   GH_REPO: ${{github.repository}}
   GH_NO_UPDATE_NOTIFIER: 1
   GH_PROMPT_DISABLED: 1
+  ESC_ACTION_OIDC_AUTH: true
+  ESC_ACTION_OIDC_ORGANIZATION: pulumi
+  ESC_ACTION_OIDC_REQUESTED_TOKEN_TYPE: urn:pulumi:token-type:access_token:organization
+  ESC_ACTION_ENVIRONMENT: imports/github-secrets
+  ESC_ACTION_EXPORT_ENVIRONMENT_VARIABLES: false
 
 jobs:
   check:
@@ -85,11 +91,14 @@ jobs:
         runner_name:
           - linux-self-hosted-1
     steps:
+      - name: Fetch secrets from ESC
+        id: esc-secrets
+        uses: pulumi/esc-action@v1
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v0.2.1
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
-          service_account_key: ${{ secrets.GCP_SA_KEY }}
+          project_id: ${{ steps.esc-secrets.outputs.GCP_PROJECT_ID }}
+          service_account_key: ${{ steps.esc-secrets.outputs.GCP_SA_KEY }}
           export_default_credentials: true
 
       - name: Wait for idle runner
@@ -97,14 +106,14 @@ jobs:
         uses: Homebrew/actions/wait-for-idle-runner@master
         with:
           runner_name: ${{ matrix.runner_name }}
-          github_token: ${{ secrets.HOMEBREW_GITHUB_PUBLIC_REPO_TOKEN }}
+          github_token: ${{ steps.esc-secrets.outputs.HOMEBREW_GITHUB_PUBLIC_REPO_TOKEN }}
 
       - name: Kill runner and create a new one
         if: ${{ steps.killable.outputs.runner-found == 'true' && steps.killable.outputs.runner-idle == 'true' }}
         uses: Homebrew/actions/create-gcloud-instance@master
         with:
           runner_name: ${{ matrix.runner_name }}
-          gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
-          gcp_service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-          gcp_sa_key: ${{ secrets.GCP_SA_KEY }}
-          github_token: ${{ secrets.HOMEBREW_GITHUB_PUBLIC_REPO_TOKEN }}
+          gcp_project_id: ${{ steps.esc-secrets.outputs.GCP_PROJECT_ID }}
+          gcp_service_account: ${{ steps.esc-secrets.outputs.GCP_SERVICE_ACCOUNT }}
+          gcp_sa_key: ${{ steps.esc-secrets.outputs.GCP_SA_KEY }}
+          github_token: ${{ steps.esc-secrets.outputs.HOMEBREW_GITHUB_PUBLIC_REPO_TOKEN }}

@@ -821,9 +821,14 @@ env:
     zoxide
     zstd
     zydis
-
+  ESC_ACTION_OIDC_AUTH: true
+  ESC_ACTION_OIDC_ORGANIZATION: pulumi
+  ESC_ACTION_OIDC_REQUESTED_TOKEN_TYPE: urn:pulumi:token-type:access_token:organization
+  ESC_ACTION_ENVIRONMENT: imports/github-secrets
+  ESC_ACTION_EXPORT_ENVIRONMENT_VARIABLES: false
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   autobump:
@@ -832,6 +837,9 @@ jobs:
     container:
       image: ghcr.io/homebrew/ubuntu22.04:master
     steps:
+      - name: Fetch secrets from ESC
+        id: esc-secrets
+        uses: pulumi/esc-action@v1
       - name: Set up Homebrew
         id: set-up-homebrew
         uses: Homebrew/actions/setup-homebrew@master
@@ -849,5 +857,5 @@ jobs:
         uses: Homebrew/actions/bump-packages@master
         continue-on-error: true
         with:
-          token: ${{ secrets.HOMEBREW_CORE_REPO_WORKFLOW_TOKEN }}
+          token: ${{ steps.esc-secrets.outputs.HOMEBREW_CORE_REPO_WORKFLOW_TOKEN }}
           formulae: ${{ github.event.inputs.formulae || env.FORMULAE }}

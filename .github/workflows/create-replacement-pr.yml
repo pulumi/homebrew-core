@@ -1,3 +1,4 @@
+permissions: write-all # Equivalent to default permissions plus id-token: write
 name: Create replacement pull request
 run-name: "Replace PR #${{ inputs.pull_request }}"
 
@@ -43,6 +44,11 @@ env:
   GH_PROMPT_DISABLED: 1
   RUN_URL: ${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}
   REPLACEMENT_BRANCH: PR/${{ inputs.pull_request }}
+  ESC_ACTION_OIDC_AUTH: true
+  ESC_ACTION_OIDC_ORGANIZATION: pulumi
+  ESC_ACTION_OIDC_REQUESTED_TOKEN_TYPE: urn:pulumi:token-type:access_token:organization
+  ESC_ACTION_ENVIRONMENT: imports/github-secrets
+  ESC_ACTION_EXPORT_ENVIRONMENT_VARIABLES: false
 
 jobs:
   create:
@@ -57,6 +63,9 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Fetch secrets from ESC
+        id: esc-secrets
+        uses: pulumi/esc-action@v1
       - name: Post comment once started
         uses: Homebrew/actions/post-comment@master
         with:
@@ -148,16 +157,16 @@ jobs:
       - name: Set up commit signing
         uses: Homebrew/actions/setup-commit-signing@master
         with:
-          signing_key: ${{ secrets.BREWTESTBOT_GPG_SIGNING_SUBKEY }}
+          signing_key: ${{ steps.esc-secrets.outputs.BREWTESTBOT_GPG_SIGNING_SUBKEY }}
 
       - name: Pull PR${{ inputs.upload && ' and upload bottles to GitHub Packages' || '' }}
         working-directory: ${{ steps.set-up-homebrew.outputs.repository-path }}
         env:
           BREWTESTBOT_NAME_EMAIL: "${{ steps.git-user-config.outputs.name }} <${{ steps.git-user-config.outputs.email }}>"
-          HOMEBREW_GPG_PASSPHRASE: ${{ secrets.BREWTESTBOT_GPG_SIGNING_SUBKEY_PASSPHRASE }}
-          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.HOMEBREW_CORE_PUBLIC_REPO_EMAIL_TOKEN }}
+          HOMEBREW_GPG_PASSPHRASE: ${{ steps.esc-secrets.outputs.BREWTESTBOT_GPG_SIGNING_SUBKEY_PASSPHRASE }}
+          HOMEBREW_GITHUB_API_TOKEN: ${{ steps.esc-secrets.outputs.HOMEBREW_CORE_PUBLIC_REPO_EMAIL_TOKEN }}
           HOMEBREW_GITHUB_PACKAGES_USER: brewtestbot
-          HOMEBREW_GITHUB_PACKAGES_TOKEN: ${{ secrets.HOMEBREW_CORE_GITHUB_PACKAGES_TOKEN }}
+          HOMEBREW_GITHUB_PACKAGES_TOKEN: ${{ steps.esc-secrets.outputs.HOMEBREW_CORE_GITHUB_PACKAGES_TOKEN }}
           MESSAGE: ${{ inputs.message }}
         run: |
           # Don't quote arguments that might be empty; this causes errors.
@@ -176,19 +185,19 @@ jobs:
       - name: Push commits
         uses: Homebrew/actions/git-try-push@master
         with:
-          token: ${{ secrets.HOMEBREW_GITHUB_PUBLIC_REPO_TOKEN }}
+          token: ${{ steps.esc-secrets.outputs.HOMEBREW_GITHUB_PUBLIC_REPO_TOKEN }}
           directory: ${{ steps.set-up-homebrew.outputs.repository-path }}
           branch: ${{ env.REPLACEMENT_BRANCH }}
         env:
           GIT_COMMITTER_NAME: ${{ steps.git-user-config.outputs.name }}
           GIT_COMMITTER_EMAIL: ${{ steps.git-user-config.outputs.email }}
-          HOMEBREW_GPG_PASSPHRASE: ${{ secrets.BREWTESTBOT_GPG_SIGNING_SUBKEY_PASSPHRASE }}
+          HOMEBREW_GPG_PASSPHRASE: ${{ steps.esc-secrets.outputs.BREWTESTBOT_GPG_SIGNING_SUBKEY_PASSPHRASE }}
 
       - name: Open replacement pull request
         id: create-pr
         working-directory: ${{ steps.set-up-homebrew.outputs.repository-path }}
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_GITHUB_PUBLIC_REPO_TOKEN }}
+          GH_TOKEN: ${{ steps.esc-secrets.outputs.HOMEBREW_GITHUB_PUBLIC_REPO_TOKEN }}
           REVIEWERS: ${{ join(fromJson(steps.reviewers.outputs.reviewers)) }}
           LABELS: ${{ inputs.upload && 'CI-published-bottle-commits' || '' }}
         run: |
@@ -225,7 +234,7 @@ jobs:
         if: inputs.upload
         working-directory: ${{ steps.set-up-homebrew.outputs.repository-path }}
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_GITHUB_PUBLIC_REPO_TOKEN }}
+          GH_TOKEN: ${{ steps.esc-secrets.outputs.HOMEBREW_GITHUB_PUBLIC_REPO_TOKEN }}
           REPLACEMENT_PR: ${{ steps.create-pr.outputs.pull_number }}
         run: |
           gh pr merge "$REPLACEMENT_PR" \
@@ -241,7 +250,7 @@ jobs:
 
       - name: Mark replaced PR as draft
         env: # We need a PAT here. https://github.com/github/docs/issues/8925#issuecomment-970255180
-          GH_TOKEN: ${{ secrets.HOMEBREW_GITHUB_PUBLIC_REPO_TOKEN  }}
+          GH_TOKEN: ${{ steps.esc-secrets.outputs.HOMEBREW_GITHUB_PUBLIC_REPO_TOKEN  }}
         run: gh pr ready --undo "$PR"
 
       - name: Post comment on success
